@@ -1,0 +1,79 @@
+{
+ "environment": {
+  "timestamp_utc": "2026-10-31T10:55:43+00:00",
+  "git_commit": "d4e497b",
+  "cpus": 4,
+  "python": "3.14.4",
+  "claude_cli": "2.1.316 (Claude Code)",
+  "chunks_indexed": 20,
+  "max_concurrent_requests": 3,
+  "claude_timeout_s": 120,
+  "top_k": 5,
+  "min_score": 0.25,
+  "require_ticket_confirmation": true
+ },
+ "scenarios": [
+  {
+   "id": "C",
+   "name": "Retrieval only (Chroma + local embeddings)",
+   "levels": [
+    {
+     "label": "1 threads",
+     "summary": {
+      "requests": 400,
+      "errors": 0,
+      "error_rate_pct": 0.0,
+      "throughput_rps": 2.79,
+      "latency_ms": {
+       "mean": 358.0,
+       "p50": 344.5,
+       "p95": 407.7,
+       "p99": 524.3,
+       "max": 986.4
+      },
+      "total_s": 143.21
+     }
+    },
+    {
+     "label": "4 threads",
+     "summary": {
+      "requests": 400,
+      "errors": 0,
+      "error_rate_pct": 0.0,
+      "throughput_rps": 2.79,
+      "latency_ms": {
+       "mean": 1429.9,
+       "p50": 1428.5,
+       "p95": 1573.7,
+       "p99": 1675.9,
+       "max": 1973.1
+      },
+      "total_s": 143.52
+     }
+    },
+    {
+     "label": "8 threads",
+     "summary": {
+      "requests": 400,
+      "errors": 0,
+      "error_rate_pct": 0.0,
+      "throughput_rps": 2.66,
+      "latency_ms": {
+       "mean": 2977.0,
+       "p50": 2925.8,
+       "p95": 3566.5,
+       "p99": 4233.4,
+       "max": 4394.2
+      },
+      "total_s": 150.17
+     }
+    }
+   ],
+   "warm_index_refresh_ms": {
+    "mean": 3.4,
+    "max": 4.1
+   },
+   "queries_per_level": 400
+  }
+ ]
+}

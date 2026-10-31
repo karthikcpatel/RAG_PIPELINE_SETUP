@@ -1,0 +1,21 @@
+{
+  "_description": "Labelled workload for performance and effectiveness testing. kb_answerable: must be answered from the golden knowledge base and cite expected_source. out_of_scope: must not be answered and must not produce a ticket. it_issue: unresolved IT problem; with reporter details the agent must propose a ticket (never create one: the harness keeps REQUIRE_TICKET_CONFIRMATION on and never confirms).",
+  "items": [
+    {"id": "KB-01", "category": "kb_answerable", "question": "How do I reset my password?", "expected_source": "password_policy.txt"},
+    {"id": "KB-02", "category": "kb_answerable", "question": "Can I share my password with a colleague?", "expected_source": "password_policy.txt"},
+    {"id": "KB-03", "category": "kb_answerable", "question": "What should a VPN support ticket include?", "expected_source": "internet_connectivity.txt"},
+    {"id": "KB-04", "category": "kb_answerable", "question": "What information must be included in an application access request?", "expected_source": "application_compliance.txt"},
+    {"id": "KB-05", "category": "kb_answerable", "question": "Who can I contact if I can't use my registered mobile number to reset my password?", "expected_source": "password_policy.txt"},
+    {"id": "KB-06", "category": "kb_answerable", "question": "What should I do if my password is compromised?", "expected_source": "password_policy.txt"},
+    {"id": "KB-07", "category": "kb_answerable", "question": "Does an application access request need manager approval?", "expected_source": "application_compliance.txt"},
+    {"id": "KB-08", "category": "kb_answerable", "question": "Am I allowed to turn off security software to make the VPN work?", "expected_source": "internet_connectivity.txt"},
+    {"id": "KB-09", "category": "kb_answerable", "question": "What happens if my access is still not granted after it was approved?", "expected_source": "application_compliance.txt"},
+    {"id": "OOS-01", "category": "out_of_scope", "question": "What is the capital of France?"},
+    {"id": "OOS-02", "category": "out_of_scope", "question": "What is the holiday leave policy?"},
+    {"id": "OOS-03", "category": "out_of_scope", "question": "Write me a short poem about autumn."},
+    {"id": "IT-01", "category": "it_issue", "question": "My laptop screen keeps flickering and Microsoft Teams crashes every few minutes, I can't join my meetings"},
+    {"id": "IT-02", "category": "it_issue", "question": "My docking station stopped detecting my two external monitors this morning"},
+    {"id": "IT-03", "category": "it_issue", "question": "The printer on floor 3 is jammed and shows error E42"},
+    {"id": "IT-04", "category": "it_issue", "question": "I get permission denied when opening the shared finance drive, and I need it for month-end close today"}
+  ]
+}
