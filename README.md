@@ -181,3 +181,50 @@ before anything is created. Set `REQUIRE_TICKET_CONFIRMATION=false` for fully au
 4. Ask the same thing again and confirm -> "you already have ticket INC..." (no duplicate). Try **No thanks** on another issue -> no ticket.
 5. *"What is the capital of France?"* -> no ticket (not an IT issue).
 6. List tickets: `curl -H "X-API-Key: $MOCK_ITSM_API_KEY" http://localhost:9000/api/incidents`
+
+## CI/CD: GitHub Actions
+
+Workflow: [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml). **test** (pytest on Python 3.14) -> **build** (release package from an explicit
+allow-list) -> **deploy** (pushes to `main` only, after the `production` environment's approval rules).
+
+```
+push to main ──> test ──> build ──> [approval] ──> deploy (self-hosted runner) ──ssh──> server
+pull request ──> test ──> build            (never deploys)
+```
+
+What the deploy does on the server (`deploy/remote_deploy.sh`, covered by `tests/test_deploy_script.py`):
+unpack to `releases/<id>` -> install dependencies into a shared virtualenv -> **self-check the new release** with a throwaway
+index (the running version is untouched if this fails) -> switch the `current` symlink -> restart the services (`systemd --user`, or
+`nohup` if unavailable) -> health-check -> **automatic rollback** to the previous release and its configuration if unhealthy.
+The newest 5 releases are kept. Chroma data, the incident database and the `.env` live in `shared/` and survive releases.
+
+### One-time setup in GitHub (nothing below is stored in the repository)
+1. **Self-hosted runner** with labels `self-hosted, linux, rag-deploy`, on a machine that can reach the server over SSH and has
+   `sshpass` and `ssh`. (GitHub-hosted runners cannot reach a private address.) *Settings > Actions > Runners > New self-hosted runner.*
+2. **Environment `production`** (*Settings > Environments*): add **required reviewers** and restrict deployment to the `main` branch.
+3. **Secrets** (on the `production` environment):
+
+   | Secret | Value |
+   |---|---|
+   | `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PASSWORD` | Server address, SSH user, SSH password |
+   | `DEPLOY_HOST_KEY` | The server's host key line, from `ssh-keyscan -t ed25519 <server>`. **Verify its fingerprint on the server** (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`) before saving. |
+   | `WEBHOOK_SECRET` | Random string, 16+ characters (`python -c "import secrets; print(secrets.token_urlsafe(32))"`) |
+   | `TICKET_API_KEY`, `MOCK_ITSM_API_KEY` | Random strings; use the same value for both when deploying the bundled mock incident system |
+   | `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` | Optional: authentication for the Claude CLI on the server |
+
+   Values may contain letters, digits and `. _ ~ : / @ + = -` only.
+4. **Variables** (optional): `DEPLOY_PATH` (default `rag-helpdesk`, relative to the user's home), `DEPLOY_MOCK_ITSM` (`true`/`false`),
+   `TICKET_API_URL` (real incident system, when `DEPLOY_MOCK_ITSM=false`), `STREAMLIT_BIND_ADDRESS` and `RECEIVER_BIND_ADDRESS`
+   (both default to `127.0.0.1`; set `0.0.0.0` only behind SSO or network controls, because the app has no login of its own).
+5. **Branch protection on `main`**: require a pull request and the **Test** status check.
+6. The repository is **public**: under *Settings > Actions > General* require approval for workflows from outside collaborators,
+   and consider making the repository private, because a self-hosted runner executes workflow code.
+
+### Server requirements
+Linux with Python 3.10+ (with `venv`), internet access on first deploy to download the ~79 MB embedding model, and the Claude CLI
+installed and authenticated for the deploy user. `systemd --user` is used when available (run `loginctl enable-linger <user>` once as
+an administrator so services survive logout and reboot).
+
+### Rolling back manually
+`ln -sfn ~/rag-helpdesk/releases/<previous-id> ~/rag-helpdesk/current` then restart the `rag-app`, `rag-webhook` and `rag-itsm`
+services (or re-run an earlier workflow run).

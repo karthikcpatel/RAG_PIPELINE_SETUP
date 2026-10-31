@@ -1,0 +1,181 @@
+name: CI/CD
+
+# test -> build -> deploy. Deploy runs only for pushes to main, on a self-hosted runner that can reach
+# the target server (a GitHub-hosted runner cannot reach a private address), and only after the
+# `production` environment's approval rules pass. Every credential, host and user name comes from
+# GitHub secrets: nothing connection-related is stored in this repository.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Superseded pull-request runs are cancelled; runs on main are never cancelled mid-flight.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Refuse to continue if secrets or generated data are tracked
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$|\.db$|^chroma_db/'; then
+            echo "::error::Secrets or generated data are tracked by git (files listed above)"; exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Cache the embedding model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/chroma
+          key: chroma-onnx-${{ runner.os }}-v1
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  build:
+    name: Build release package
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Create the package (explicit allow-list; tests, scenarios and local files are left out)
+        run: |
+          echo "$GITHUB_SHA" > VERSION
+          tar -czf release.tgz \
+            VERSION app.py cli.py requirements.txt \
+            config services utils webhook_receiver mock_itsm deploy .streamlit \
+            data/golden \
+            data/static/severity_priority.json data/static/ticket_categories.json
+          echo "Package contents (top level):"; tar -tzf release.tgz | cut -d/ -f1-2 | sort -u | head -40
+          tar -tzf release.tgz | grep -q '^deploy/remote_deploy.sh$' || { echo "::error::deploy script missing from package"; exit 1; }
+          if tar -tzf release.tgz | grep -E '(^|/)\.env$|\.db$|^tests/|chroma_db'; then
+            echo "::error::package contains files that must never be deployed"; exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: release.tgz
+          retention-days: 7
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy to the target server
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Self-hosted runner with network access to the server. Register it with the labels below.
+    runs-on: [self-hosted, linux, rag-deploy]
+    environment: production
+    timeout-minutes: 30
+    # One deployment at a time; a newer one waits instead of cancelling a deployment in progress.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || 'rag-helpdesk' }}
+    steps:
+      - name: Check required secrets and settings
+        env:
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          TICKET_API_KEY: ${{ secrets.TICKET_API_KEY }}
+        run: |
+          missing=0
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_PASSWORD DEPLOY_HOST_KEY WEBHOOK_SECRET TICKET_API_KEY; do
+            if [ -z "${!name}" ]; then echo "::error::Secret $name is not configured"; missing=1; fi
+          done
+          [ "$missing" = 0 ] || exit 1
+          if ! [[ "$DEPLOY_PATH" =~ ^[A-Za-z0-9._/-]+$ ]] || [[ "$DEPLOY_PATH" == /* || "$DEPLOY_PATH" == *..* ]]; then
+            echo "::error::DEPLOY_PATH must be a relative path (letters, digits, . _ / -) without '..'"; exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+
+      - name: Prepare connection files (kept in the runner's temp folder, removed afterwards)
+        env:
+          DEPLOY_MOCK_ITSM: ${{ vars.DEPLOY_MOCK_ITSM || 'true' }}
+          STREAMLIT_BIND_ADDRESS: ${{ vars.STREAMLIT_BIND_ADDRESS || '127.0.0.1' }}
+          RECEIVER_BIND_ADDRESS: ${{ vars.RECEIVER_BIND_ADDRESS || '127.0.0.1' }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          TICKET_API_KEY: ${{ secrets.TICKET_API_KEY }}
+          MOCK_ITSM_API_KEY: ${{ secrets.MOCK_ITSM_API_KEY }}
+          TICKET_API_URL: ${{ vars.TICKET_API_URL }}
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$DEPLOY_HOST_KEY" > "$RUNNER_TEMP/known_hosts"
+
+          # Values are written to a KEY=value file, so only plain characters are accepted.
+          safe='^[A-Za-z0-9._~:/@+=-]+$'
+          settings="$RUNNER_TEMP/rag-settings"
+          : > "$settings"
+          for name in WEBHOOK_SECRET TICKET_API_KEY MOCK_ITSM_API_KEY TICKET_API_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
+                      DEPLOY_MOCK_ITSM STREAMLIT_BIND_ADDRESS RECEIVER_BIND_ADDRESS; do
+            value="${!name:-}"
+            [ -n "$value" ] || continue
+            if ! [[ "$value" =~ $safe ]]; then
+              echo "::error::$name contains characters that are not supported (use letters, digits and . _ ~ : / @ + = -)"; exit 1
+            fi
+            printf '%s=%s\n' "$name" "$value" >> "$settings"
+          done
+
+      - name: Upload the release and deploy it
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}   # read by sshpass -e; never placed on a command line
+        run: |
+          set -euo pipefail
+          RELEASE_ID="${GITHUB_SHA::12}-r${GITHUB_RUN_NUMBER}"
+          SSH_OPTS=(-o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts"
+                    -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectTimeout=15)
+          TARGET="$DEPLOY_USER@$DEPLOY_HOST"
+
+          sshpass -e scp "${SSH_OPTS[@]}" release.tgz "$TARGET:/tmp/rag-release-$RELEASE_ID.tgz"
+          sshpass -e scp "${SSH_OPTS[@]}" "$RUNNER_TEMP/rag-settings" "$TARGET:/tmp/rag-settings-$RELEASE_ID"
+
+          # $HOME and the quoting below are evaluated on the server.
+          sshpass -e ssh "${SSH_OPTS[@]}" "$TARGET" "set -e
+            ROOT=\"\$HOME/$DEPLOY_PATH\"
+            mkdir -p \"\$ROOT/releases/$RELEASE_ID\"
+            tar -xzf /tmp/rag-release-$RELEASE_ID.tgz -C \"\$ROOT/releases/$RELEASE_ID\"
+            rm -f /tmp/rag-release-$RELEASE_ID.tgz
+            DEPLOY_ROOT=\"\$ROOT\" bash \"\$ROOT/releases/$RELEASE_ID/deploy/remote_deploy.sh\" $RELEASE_ID /tmp/rag-settings-$RELEASE_ID"
+
+      - name: Remove temporary files
+        if: always()
+        run: rm -f "$RUNNER_TEMP/known_hosts" "$RUNNER_TEMP/rag-settings" release.tgz
