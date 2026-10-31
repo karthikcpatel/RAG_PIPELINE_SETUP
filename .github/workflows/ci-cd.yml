@@ -39,7 +39,7 @@ jobs:
             echo "::error::Secrets or generated data are tracked by git (files listed above)"; exit 1
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
