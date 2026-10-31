@@ -1,0 +1,54 @@
+name: Server check
+
+# Manual, read-only check of the deployment target: proves the SSH credentials and the pinned host key work and that
+# the server meets the requirements, BEFORE a real deployment. Runs the same way as the deploy job (self-hosted runner,
+# `production` environment approval, secrets only). It never deploys or changes anything on the server.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check the target server
+    runs-on: [self-hosted, linux, rag-deploy]
+    environment: production
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check required secrets
+        env:
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+        run: |
+          missing=0
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_PASSWORD DEPLOY_HOST_KEY; do
+            if [ -z "${!name}" ]; then echo "::error::Secret $name is not configured"; missing=1; fi
+          done
+          [ "$missing" = 0 ] || exit 1
+
+      - name: Run the readiness check on the server
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}   # read by sshpass -e; never placed on a command line
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$DEPLOY_HOST_KEY" > "$RUNNER_TEMP/known_hosts"
+          SSH_OPTS=(-o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts"
+                    -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectTimeout=15)
+          TARGET="$DEPLOY_USER@$DEPLOY_HOST"
+          REMOTE="/tmp/rag-check-$GITHUB_RUN_ID.sh"
+          sshpass -e scp "${SSH_OPTS[@]}" deploy/check_server.sh "$TARGET:$REMOTE"
+          sshpass -e ssh "${SSH_OPTS[@]}" "$TARGET" "bash $REMOTE; rc=\$?; rm -f $REMOTE; exit \$rc"
+
+      - name: Remove temporary files
+        if: always()
+        run: rm -f "$RUNNER_TEMP/known_hosts"

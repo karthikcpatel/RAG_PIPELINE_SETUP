@@ -198,6 +198,9 @@ index (the running version is untouched if this fails) -> switch the `current` s
 `nohup` if unavailable) -> health-check -> **automatic rollback** to the previous release and its configuration if unhealthy.
 The newest 5 releases are kept. Chroma data, the incident database and the `.env` live in `shared/` and survive releases.
 
+> Full step-by-step guide, including the one-time server preparation and a read-only **Server check** workflow:
+> [`docs/deployment-setup.md`](docs/deployment-setup.md).
+
 ### One-time setup in GitHub (nothing below is stored in the repository)
 1. **Self-hosted runner** with labels `self-hosted, linux, rag-deploy`, on a machine that can reach the server over SSH and has
    `sshpass` and `ssh`. (GitHub-hosted runners cannot reach a private address.) *Settings > Actions > Runners > New self-hosted runner.*

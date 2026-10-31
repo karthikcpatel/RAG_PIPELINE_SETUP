@@ -134,3 +134,46 @@ def test_deploy_script_syntax_and_safety_flags():
 @pytest.mark.parametrize("path", [".github/dependabot.yml", ".streamlit/config.toml"])
 def test_supporting_config_files_exist(path):
     assert (ROOT / path).is_file()
+
+
+# ---- every workflow that touches the server is held to the same rules ---------------------------------
+WORKFLOW_FILES = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+
+
+@pytest.mark.parametrize("path", WORKFLOW_FILES, ids=lambda p: p.name)
+def test_every_workflow_uses_only_known_secrets_and_strict_ssh(path):
+    text = path.read_text(encoding="utf-8")
+    assert set(re.findall(r"secrets\.([A-Z0-9_]+)", text)) <= ALLOWED_SECRETS
+    if "ssh" in text:
+        assert "StrictHostKeyChecking=yes" in text and "StrictHostKeyChecking=no" not in text
+        assert "sshpass -e" in text and SSHPASS_ARG not in text
+    assert re.search(r"permissions:\s*\n\s+contents: read", text)
+
+
+def test_server_check_is_manual_read_only_and_gated():
+    check = yaml.safe_load((ROOT / ".github" / "workflows" / "server-check.yml").read_text())
+    triggers = check[True] if True in check else check["on"]
+    assert set(triggers) == {"workflow_dispatch"}  # never runs on push or pull request
+    job = check["jobs"]["check"]
+    assert job["environment"] == "production" and "self-hosted" in job["runs-on"]
+    text = (ROOT / ".github" / "workflows" / "server-check.yml").read_text()
+    assert "remote_deploy.sh" not in text  # it must not be able to deploy
+
+
+def test_check_server_script_is_read_only_and_valid():
+    script = ROOT / "deploy" / "check_server.sh"
+    assert subprocess.run(["bash", "-n", str(script)], capture_output=True).returncode == 0
+    # Advice printed through ok/warn/bad may mention sudo or pip; only lines that execute are checked.
+    executed = "\n".join(
+        line for line in script.read_text().splitlines()
+        if not re.match(r"\s*(ok|warn|bad|echo|printf)\b", line) and not re.search(r'\b(ok|warn|bad) "', line)
+    )
+    for forbidden in ("rm -rf", "sudo ", "systemctl --user enable", "systemctl --user start", "pip install", "mkdir -p"):
+        assert forbidden not in executed, f"a read-only check must not execute: {forbidden}"
+
+
+def test_setup_guide_exists_and_uses_placeholders():
+    guide = (ROOT / "docs" / "deployment-setup.md").read_text()
+    for secret in ALLOWED_SECRETS - {"ANTHROPIC_BASE_URL"}:
+        assert secret in guide, f"{secret} is not documented"
+    assert "<server>" in guide and "<deploy-user>" in guide
