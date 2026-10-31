@@ -1,0 +1,42 @@
+{
+  "_description": "Scenario data: replies the triage step may receive from Claude, from well-formed to untrustworthy.",
+  "issue": {
+    "is_support_issue": true,
+    "title": "Laptop screen flickers and Teams crashes",
+    "summary": "The user's laptop screen flickers and Microsoft Teams crashes repeatedly.",
+    "severity": "medium",
+    "category": "hardware"
+  },
+  "not_issue": {
+    "is_support_issue": false,
+    "title": "",
+    "summary": "",
+    "severity": "low",
+    "category": "general"
+  },
+  "critical_severity": {
+    "is_support_issue": true,
+    "title": "Everything is down",
+    "summary": "All services are unreachable for me.",
+    "severity": "critical"
+  },
+  "unknown_category": {
+    "is_support_issue": true,
+    "title": "Something odd",
+    "summary": "Something odd keeps happening.",
+    "category": "wizardry"
+  },
+  "issue_without_usable_title": {
+    "is_support_issue": true,
+    "title": "x",
+    "summary": "y"
+  },
+  "garbage_replies": [
+    "",
+    "no json here",
+    "{broken",
+    "{\"is_support_issue\": \"maybe\"}",
+    "[\"list\"]"
+  ],
+  "chatty_reply_without_json": "Sure! I opened a ticket for you."
+}

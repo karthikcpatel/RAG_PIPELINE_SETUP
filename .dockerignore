@@ -1,0 +1,17 @@
+.env
+*.env
+!.env.example
+chroma_db/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+tests/
+.git/
+.streamlit/secrets.toml
+README.md
+data/scenario/
+data/static/readme.txt
+scripts/
+data/integration/

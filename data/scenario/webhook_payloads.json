@@ -1,0 +1,40 @@
+{
+  "_description": "Scenario data for the webhook receiver. 'valid' is the happy-path event; each 'invalid_cases' entry is the valid event with these fields overridden and must be rejected; 'sample' is the event sent by scripts/send_sample_webhook.py. {\"$repeat\": [text, n]} expands to text repeated n times.",
+  "valid": {
+    "event_id": "evt-0001-abcdef",
+    "event_type": "issue.reported",
+    "title": "VPN disconnects every few minutes",
+    "description": "Since this morning the VPN drops about every five minutes.",
+    "severity": "high",
+    "category": "network",
+    "application": "Corporate VPN",
+    "reporter": {"name": "Alex Example", "email": "alex.example@company.test"},
+    "reported_at": "2026-10-31T09:30:00+00:00",
+    "metadata": {"client_version": "5.2.1", "location": "Home office"}
+  },
+  "invalid_cases": [
+    {"case": "event_id too short", "overrides": {"event_id": "short"}},
+    {"case": "event_id with spaces and punctuation", "overrides": {"event_id": "has spaces in it!"}},
+    {"case": "unsupported event_type", "overrides": {"event_type": "issue.deleted"}},
+    {"case": "title too short", "overrides": {"title": "bad"}},
+    {"case": "title too long", "overrides": {"title": {"$repeat": ["x", 161]}}},
+    {"case": "title contains a line break", "overrides": {"title": "line\nbreak in title"}},
+    {"case": "description too short", "overrides": {"description": "too short"}},
+    {"case": "unknown severity", "overrides": {"severity": "urgent"}},
+    {"case": "reporter email invalid", "overrides": {"reporter": {"name": "A", "email": "not-an-email"}}},
+    {"case": "reporter name empty", "overrides": {"reporter": {"name": "", "email": "a@b.test"}}},
+    {"case": "metadata value is not a string", "overrides": {"metadata": {"k": 5}}},
+    {"case": "metadata has 21 entries", "overrides": {"metadata": {"k00": "v", "k01": "v", "k02": "v", "k03": "v", "k04": "v", "k05": "v", "k06": "v", "k07": "v", "k08": "v", "k09": "v", "k10": "v", "k11": "v", "k12": "v", "k13": "v", "k14": "v", "k15": "v", "k16": "v", "k17": "v", "k18": "v", "k19": "v", "k20": "v"}}},
+    {"case": "metadata value too long", "overrides": {"metadata": {"k": {"$repeat": ["v", 201]}}}},
+    {"case": "unknown extra field", "overrides": {"unexpected_field": "x"}}
+  ],
+  "sample": {
+    "title": "VPN disconnects every few minutes",
+    "description": "Since this morning the VPN drops about every five minutes and I have to reconnect.",
+    "severity": "high",
+    "category": "network",
+    "application": "Corporate VPN",
+    "reporter": {"name": "Alex Example", "email": "alex.example@company.test"},
+    "metadata": {"client_version": "5.2.1", "location": "Home office"}
+  }
+}
